@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "mcp": {
+      "command": "${ComSpec:-/bin/sh}",
+      "args": ["-c", "IFS=;exec sh $SAP_MCP_LAUNCH", "/c", "${CLAUDE_PLUGIN_ROOT}\\launch.cmd"],
+      "env": {
+        "SAP_MCP_LAUNCH": "${CLAUDE_PLUGIN_ROOT}/launch.sh",
+        "SAP_ENV": "prod",
+        "SAP_MCP_TOOLSET": "core",
+        "SAP_MCP_INLINE_CHARS": "12000",
+        "SAP_MCP_SESSION_BUDGET_CHARS": "200000",
+        "SAP_MCP_MAX_CALLS": "80"
+      }
+    }
+  }
+}

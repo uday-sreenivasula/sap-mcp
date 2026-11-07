@@ -1,0 +1,20 @@
+{
+  "environments": {
+    "prod": {
+      "label": "Production",
+      "sid": "PRD",
+      "base_url": "https://sap-prod.example.com:44300",
+      "client": "100",
+      "verify_tls": false
+    },
+    "dev": {
+      "label": "Development / Testing",
+      "sid": "DEV",
+      "base_url": "https://sap-dev.example.com:44300",
+      "client": "200",
+      "verify_tls": false
+    }
+  },
+  "company_note": "Company: 1000 Example Ltd; chart of accounts INT; currency EUR.",
+  "charts": "1000"
+}
