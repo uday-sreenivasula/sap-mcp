@@ -59,3 +59,7 @@ python -m venv .venv
 ```
 
 Design rules and lessons learned are in [`CLAUDE.md`](CLAUDE.md).
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). SAP and S/4HANA are trademarks of SAP SE; this project is not affiliated with SAP.
