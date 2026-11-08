@@ -1211,7 +1211,15 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
         " Includes the program uses; system includes (<ICON> etc.) are left out.
         SELECT include FROM d010inc WHERE master = @lv_name AND include NOT LIKE '<%'
           ORDER BY include INTO TABLE @lt_more.
-        DELETE lt_more WHERE table_line CP '%*' OR table_line CS '='.
+        " Drop system includes (%_..., <ICON>, >ICON<) and class-pool includes
+        " (30-char class name padded with '=' plus CU/CI/CO/CT/CM.../IT/IU/IP).
+        LOOP AT lt_more ASSIGNING FIELD-SYMBOL(<lv_inc>).
+          IF <lv_inc>(1) CA '%<>' OR <lv_inc> CS '='
+             OR ( strlen( <lv_inc> ) >= 32 AND <lv_inc>+30(2) CO 'CIOTUMPL' ).
+            CLEAR <lv_inc>.
+          ENDIF.
+        ENDLOOP.
+        DELETE lt_more WHERE table_line IS INITIAL.
       WHEN 'CLAS' OR 'INTF'.
         need_source( iv_objtype = CONV #( lv_type ) iv_objname = lv_name ).
         TRY.
