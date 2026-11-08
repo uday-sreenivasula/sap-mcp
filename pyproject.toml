@@ -1,6 +1,6 @@
 [project]
 name = "sap-mcp"
-version = "0.7.7"
+version = "0.7.8"
 description = "Read-only MCP server for SAP S/4HANA OData (CA/Finance workflows)"
 requires-python = ">=3.10"
 license = { text = "MIT" }

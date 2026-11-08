@@ -7,7 +7,7 @@
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 NAME="sap-mcp-plugin"
 ENTRY="run.py"
-VER="0.7.7"
+VER="0.7.8"
 DATA="$HOME/Library/Application Support/$NAME"
 mkdir -p "$DATA"
 

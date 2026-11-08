@@ -20,6 +20,16 @@
 "!     LIST_ATTACHMENTS / GET_ATTACHMENT   GOS files (SRGBTBREL -> SOOD;
 "!       content via SO_DOCUMENT_READ_API1, base64). GET_ATTACHMENT only
 "!       returns a document linked to the object named in the call.
+"!     GET_SOURCE       ABAP source of a program, include, class, interface or
+"!                      function module (REPORT = name or transaction code;
+"!                      OBJECT_TYPE optional; WITH_INCLUDES fetches customer
+"!                      includes too). READ REPORT / class source API, active
+"!                      version, after an S_DEVELOP display check.
+"!     GET_SMARTFORM    a Smart Form's definition as XML (what SMARTFORMS ->
+"!                      Utilities -> Download Form produces) plus its generated
+"!                      function module; REPORT with * lists forms instead.
+"!     READ_TEXT        a SAPscript / SO10 text (TEXT_OBJECT, TEXT_NAME,
+"!                      TEXT_ID, LANGUAGE); TEXT_NAME with * lists texts.
 "!     Every operation checks S_TABU_NAM for the tables it reads.
 "!
 "! Security model
@@ -81,13 +91,32 @@ CLASS zcl_zcfg_read_dpc_ext DEFINITION
         report       TYPE string,
         variant      TYPE string,
         selections   TYPE rsparams_tt,
-      END OF ts_params.
+        with_includes TYPE abap_bool,
+        text_object  TYPE string,
+        text_name    TYPE string,
+        text_id      TYPE string,
+        language     TYPE string,
+      END OF ts_params,
+
+      " One source unit returned by GET_SOURCE (kind SOURCE), or an include
+      " that was only listed (kind INCLUDE).
+      BEGIN OF ts_source,
+        kind       TYPE string,
+        name       TYPE string,
+        type       TYPE string,
+        title      TYPE string,
+        via        TYPE string,
+        line_count TYPE i,
+        truncated  TYPE abap_bool,
+        source     TYPE string,
+      END OF ts_source.
 
     CONSTANTS:
       c_default_rows TYPE i VALUE 100,
       c_max_rows     TYPE i VALUE 5000,
       c_max_where    TYPE i VALUE 4000,
-      c_max_file     TYPE i VALUE 15000000.   " bytes per GET_ATTACHMENT call
+      c_max_file     TYPE i VALUE 15000000,   " bytes per GET_ATTACHMENT call
+      c_max_src      TYPE i VALUE 40000.      " source lines per GET_SOURCE call
 
     METHODS read_table
       IMPORTING it_parameter   TYPE /iwbep/t_mgw_name_value_pair
@@ -140,6 +169,32 @@ CLASS zcl_zcfg_read_dpc_ext DEFINITION
       IMPORTING is_p            TYPE ts_params
                 iv_with_content TYPE abap_bool
       RETURNING VALUE(rt_rows)  TYPE tt_rows
+      RAISING   /iwbep/cx_mgw_busi_exception.
+
+    METHODS op_source
+      IMPORTING is_p           TYPE ts_params
+      RETURNING VALUE(rt_rows) TYPE tt_rows
+      RAISING   /iwbep/cx_mgw_busi_exception.
+
+    METHODS add_source
+      IMPORTING is_unit TYPE ts_source
+                it_src  TYPE seop_source_string
+      CHANGING  ct_rows TYPE tt_rows
+                cv_left TYPE i.
+
+    METHODS need_source
+      IMPORTING iv_objtype TYPE trobjtype
+                iv_objname TYPE sobj_name
+      RAISING   /iwbep/cx_mgw_busi_exception.
+
+    METHODS op_smartform
+      IMPORTING is_p           TYPE ts_params
+      RETURNING VALUE(rt_rows) TYPE tt_rows
+      RAISING   /iwbep/cx_mgw_busi_exception.
+
+    METHODS op_text
+      IMPORTING is_p           TYPE ts_params
+      RETURNING VALUE(rt_rows) TYPE tt_rows
       RAISING   /iwbep/cx_mgw_busi_exception.
 
     METHODS need_table
@@ -365,9 +420,16 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
         rt_rows = op_attachments( is_p = ls_p iv_with_content = abap_false ).
       WHEN 'GET_ATTACHMENT'.
         rt_rows = op_attachments( is_p = ls_p iv_with_content = abap_true ).
+      WHEN 'GET_SOURCE'.
+        rt_rows = op_source( ls_p ).
+      WHEN 'GET_SMARTFORM'.
+        rt_rows = op_smartform( ls_p ).
+      WHEN 'READ_TEXT'.
+        rt_rows = op_text( ls_p ).
       WHEN OTHERS.
         fail( |Unknown Operation '{ lv_op }'. Use AGGREGATE, DUPLICATES, TRIAL_BALANCE, AGEING, GRIR, | &&
-              |LIST_REPORTS, REPORT_INFO, RUN_REPORT, LIST_ATTACHMENTS or GET_ATTACHMENT.| ).
+              |LIST_REPORTS, REPORT_INFO, RUN_REPORT, LIST_ATTACHMENTS, GET_ATTACHMENT, GET_SOURCE, | &&
+              |GET_SMARTFORM or READ_TEXT.| ).
     ENDCASE.
   ENDMETHOD.
 
@@ -1071,6 +1133,338 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
     IF iv_with_content = abap_true AND rt_rows IS INITIAL.
       fail( |Document { lv_docid } is not attached to { lv_type } { lv_key }.| ).
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD op_source.
+    " ABAP source of a program, include, class, interface or function module.
+    DATA: lt_src  TYPE seop_source_string,
+          lt_more TYPE STANDARD TABLE OF syrepid WITH EMPTY KEY,
+          ls_unit TYPE ts_source,
+          lv_left TYPE i VALUE c_max_src,
+          lv_via  TYPE string.
+
+    DATA(lv_name) = CONV syrepid( to_upper( condense( is_p-report ) ) ).
+    DATA(lv_type) = to_upper( condense( is_p-object_type ) ).
+    IF lv_name IS INITIAL.
+      fail( 'REPORT (the object name or transaction code) is required.' ).
+    ENDIF.
+
+    " A transaction code stands for the program it starts.
+    IF lv_type IS INITIAL OR lv_type = 'TCODE'.
+      SELECT SINGLE pgmna FROM tstc WHERE tcode = @lv_name INTO @DATA(lv_pgm).
+      IF sy-subrc = 0 AND lv_pgm IS NOT INITIAL.
+        lv_via  = |transaction { lv_name }|.
+        lv_name = lv_pgm.
+        lv_type = 'PROG'.
+      ELSEIF lv_type = 'TCODE'.
+        fail( |Transaction { lv_name } does not exist or starts no program.| ).
+      ENDIF.
+    ENDIF.
+    " Work out what the name is when the caller did not say.
+    IF lv_type IS INITIAL.
+      SELECT SINGLE subc FROM trdir WHERE name = @lv_name INTO @DATA(lv_subc).
+      IF sy-subrc = 0.
+        lv_type = COND #( WHEN lv_subc = 'I' THEN 'INCL' ELSE 'PROG' ).
+      ELSE.
+        SELECT SINGLE clstype FROM seoclass WHERE clsname = @lv_name INTO @DATA(lv_clstype).
+        IF sy-subrc = 0.
+          lv_type = COND #( WHEN lv_clstype = '1' THEN 'INTF' ELSE 'CLAS' ).
+        ELSE.
+          SELECT SINGLE funcname FROM tfdir WHERE funcname = @lv_name INTO @DATA(lv_fm).
+          IF sy-subrc = 0.
+            lv_type = 'FUNC'.
+          ELSE.
+            fail( |{ lv_name } is not a program, include, class, interface, function module | &&
+                  |or transaction code.| ).
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    CASE lv_type.
+      WHEN 'PROG' OR 'INCL'.
+        need_source( iv_objtype = 'PROG' iv_objname = CONV #( lv_name ) ).
+        READ REPORT lv_name INTO lt_src STATE 'A'.
+        IF sy-subrc <> 0.
+          fail( |{ lv_name } has no active source (or does not exist).| ).
+        ENDIF.
+        SELECT SINGLE text FROM trdirt WHERE name = @lv_name AND sprsl = @sy-langu
+          INTO @ls_unit-title.
+        " Includes the program uses; system includes (<ICON> etc.) are left out.
+        SELECT include FROM d010inc WHERE master = @lv_name AND include NOT LIKE '<%'
+          ORDER BY include INTO TABLE @lt_more.
+      WHEN 'CLAS' OR 'INTF'.
+        need_source( iv_objtype = CONV #( lv_type ) iv_objname = CONV #( lv_name ) ).
+        TRY.
+            cl_oo_factory=>create_instance( )->create_clif_source(
+                clif_name = CONV seoclsname( lv_name )
+                version   = seoc_version_active )->get_source( IMPORTING source = lt_src ).
+          CATCH cx_root INTO DATA(lx_oo).
+            fail( |Cannot read the source of { lv_name }: { lx_oo->get_text( ) }| ).
+        ENDTRY.
+        SELECT SINGLE descript FROM seoclasstx WHERE clsname = @lv_name AND langu = @sy-langu
+          INTO @ls_unit-title.
+      WHEN 'FUNC'.
+        SELECT SINGLE pname, include FROM tfdir WHERE funcname = @lv_name
+          INTO ( @DATA(lv_pname), @DATA(lv_incl) ).
+        IF sy-subrc <> 0.
+          fail( |Function module { lv_name } does not exist.| ).
+        ENDIF.
+        " The module's code lives in include L<group>U<nn> of SAPL<group>.
+        DATA(lv_group) = replace( val = lv_pname sub = 'SAPL' with = '' occ = 1 ).
+        need_source( iv_objtype = 'FUGR' iv_objname = CONV #( lv_group ) ).
+        DATA(lv_fincl) = CONV syrepid( replace( val = lv_pname sub = 'SAPL' with = 'L' occ = 1 )
+                                       && 'U' && lv_incl ).
+        READ REPORT lv_fincl INTO lt_src STATE 'A'.
+        IF sy-subrc <> 0.
+          fail( |No active source for function module { lv_name } (include { lv_fincl }).| ).
+        ENDIF.
+        SELECT SINGLE stext FROM tftit WHERE funcname = @lv_name AND spras = @sy-langu
+          INTO @ls_unit-title.
+        lv_via = |include { lv_fincl } of function group { lv_group }|.
+      WHEN OTHERS.
+        fail( |OBJECT_TYPE must be PROG, INCL, CLAS, INTF, FUNC or TCODE, not '{ lv_type }'.| ).
+    ENDCASE.
+
+    ls_unit-name = lv_name.
+    ls_unit-type = lv_type.
+    ls_unit-via  = lv_via.
+    add_source( EXPORTING is_unit = ls_unit it_src = lt_src
+                CHANGING  ct_rows = rt_rows cv_left = lv_left ).
+
+    " Includes: customer ones (Z*, Y*, /namespace/) are fetched when asked,
+    " SAP's own are only listed.
+    LOOP AT lt_more INTO DATA(lv_more).
+      CLEAR ls_unit.
+      ls_unit-name = lv_more.
+      ls_unit-type = 'INCL'.
+      SELECT SINGLE text FROM trdirt WHERE name = @lv_more AND sprsl = @sy-langu
+        INTO @ls_unit-title.
+      IF is_p-with_includes = abap_true AND lv_left > 0
+         AND ( lv_more(1) = 'Z' OR lv_more(1) = 'Y' OR lv_more(1) = '/' ).
+        READ REPORT lv_more INTO lt_src STATE 'A'.
+        IF sy-subrc = 0.
+          add_source( EXPORTING is_unit = ls_unit it_src = lt_src
+                      CHANGING  ct_rows = rt_rows cv_left = lv_left ).
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+      ls_unit-kind = 'INCLUDE'.
+      APPEND to_row( iv_no = lines( rt_rows ) + 1 is_data = ls_unit ) TO rt_rows.
+    ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD add_source.
+    DATA(ls_unit) = is_unit.
+    DATA(lt_src)  = it_src.
+    ls_unit-kind       = 'SOURCE'.
+    ls_unit-line_count = lines( lt_src ).
+    IF ls_unit-line_count > cv_left.
+      DELETE lt_src FROM cv_left + 1.
+      ls_unit-truncated = abap_true.
+    ENDIF.
+    cv_left = cv_left - lines( lt_src ).
+    CONCATENATE LINES OF lt_src INTO ls_unit-source SEPARATED BY cl_abap_char_utilities=>newline.
+    APPEND to_row( iv_no = lines( ct_rows ) + 1 is_data = ls_unit ) TO ct_rows.
+  ENDMETHOD.
+
+
+  METHOD need_source.
+    " Display authorization for development objects, under the caller's user.
+    AUTHORITY-CHECK OBJECT 'S_DEVELOP'
+      ID 'DEVCLASS' DUMMY
+      ID 'OBJTYPE'  FIELD iv_objtype
+      ID 'OBJNAME'  FIELD iv_objname
+      ID 'P_GROUP'  DUMMY
+      ID 'ACTVT'    FIELD '03'.
+    IF sy-subrc <> 0.
+      fail( |No authorization to display { iv_objtype } { iv_objname } (S_DEVELOP, activity 03).| ).
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD op_smartform.
+    TYPES: BEGIN OF ts_sf,
+             kind       TYPE string,
+             name       TYPE string,
+             title      TYPE string,
+             language   TYPE string,
+             function   TYPE string,
+             changed_by TYPE string,
+             changed_on TYPE string,
+             xml        TYPE string,
+           END OF ts_sf.
+    DATA: ls_sf TYPE ts_sf,
+          lv_fm TYPE rs38l_fnam,
+          lv_no TYPE i.
+
+    DATA(lv_name) = CONV tdsfname( to_upper( condense( is_p-report ) ) ).
+    IF lv_name IS INITIAL.
+      fail( 'REPORT (the Smart Form name, or a pattern like ZMR*) is required.' ).
+    ENDIF.
+    need_table( 'STXFADM' ).
+
+    IF lv_name CA '*%'.
+      " List forms matching the pattern, with their captions.
+      DATA(lv_pat) = replace( val = CONV string( lv_name ) sub = `*` with = `%` occ = 0 ).
+      SELECT a~formname, a~masterlang, a~lastuser, a~lastdate, t~caption
+        FROM stxfadm AS a
+        LEFT OUTER JOIN stxfadmt AS t ON t~formname = a~formname AND t~langu = @sy-langu
+        WHERE a~formname LIKE @lv_pat
+        ORDER BY a~formname
+        INTO TABLE @DATA(lt_forms)
+        UP TO @is_p-max_rows ROWS.
+      LOOP AT lt_forms INTO DATA(ls_form).
+        lv_no = lv_no + 1.
+        ls_sf = VALUE #( kind = 'FORM' name = ls_form-formname title = ls_form-caption
+                         language = ls_form-masterlang changed_by = ls_form-lastuser
+                         changed_on = |{ ls_form-lastdate DATE = ISO }| ).
+        APPEND to_row( iv_no = lv_no is_data = ls_sf ) TO rt_rows.
+      ENDLOOP.
+      RETURN.
+    ENDIF.
+
+    SELECT SINGLE formname, masterlang, lastuser, lastdate FROM stxfadm
+      WHERE formname = @lv_name INTO @DATA(ls_adm).
+    IF sy-subrc <> 0.
+      fail( |Smart Form { lv_name } does not exist.| ).
+    ENDIF.
+    need_source( iv_objtype = 'SSFO' iv_objname = CONV #( lv_name ) ).
+    ls_sf-kind       = 'SMARTFORM'.
+    ls_sf-name       = ls_adm-formname.
+    ls_sf-language   = ls_adm-masterlang.
+    ls_sf-changed_by = ls_adm-lastuser.
+    ls_sf-changed_on = |{ ls_adm-lastdate DATE = ISO }|.
+    SELECT SINGLE caption FROM stxfadmt WHERE formname = @lv_name AND langu = @sy-langu
+      INTO @ls_sf-title.
+
+    " The generated function module (its code: GET_SOURCE with this name).
+    CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+      EXPORTING
+        formname           = lv_name
+      IMPORTING
+        fm_name            = lv_fm
+      EXCEPTIONS
+        no_form            = 1
+        no_function_module = 2
+        OTHERS             = 3.
+    IF sy-subrc = 0.
+      ls_sf-function = lv_fm.
+    ENDIF.
+
+    " The form definition as XML, exactly as the Form Builder downloads it.
+    DATA(lo_ixml) = cl_ixml=>create( ).
+    DATA(lo_doc)  = lo_ixml->create_document( ).
+    DATA(lo_root) = lo_doc->create_element( name = 'smartform' ).
+    lo_doc->append_child( lo_root ).
+    DATA(lo_form) = NEW cl_ssf_fb_smart_form( ).
+    TRY.
+        lo_form->load( im_formname = lv_name im_language = '' ).
+        lo_form->xml_download( EXPORTING parent   = lo_root
+                               CHANGING  document = lo_doc ).
+      CATCH cx_ssf_fb INTO DATA(lx_sf).
+        fail( |Cannot load Smart Form { lv_name }: { lx_sf->get_text( ) }| ).
+    ENDTRY.
+    DATA(lo_stream) = lo_ixml->create_stream_factory( )->create_ostream_cstring( string = ls_sf-xml ).
+    lo_ixml->create_renderer( ostream = lo_stream document = lo_doc )->render( ).
+
+    APPEND to_row( iv_no = 1 is_data = ls_sf ) TO rt_rows.
+  ENDMETHOD.
+
+
+  METHOD op_text.
+    " SAPscript / SO10 texts (READ_TEXT), as print forms include them.
+    TYPES: BEGIN OF ts_text,
+             kind       TYPE string,
+             object     TYPE string,
+             name       TYPE string,
+             id         TYPE string,
+             language   TYPE string,
+             title      TYPE string,
+             changed_by TYPE string,
+             changed_on TYPE string,
+             line_count TYPE i,
+             text       TYPE string,
+           END OF ts_text.
+    DATA: lt_lines TYPE STANDARD TABLE OF tline,
+          lt_out   TYPE STANDARD TABLE OF string,
+          ls_text  TYPE ts_text,
+          lt_hdr   TYPE STANDARD TABLE OF stxh,
+          lv_no    TYPE i.
+
+    DATA(lv_object) = CONV tdobject( to_upper( condense( is_p-text_object ) ) ).
+    DATA(lv_name)   = CONV tdobname( condense( is_p-text_name ) ).
+    DATA(lv_id)     = CONV tdid( to_upper( condense( is_p-text_id ) ) ).
+    DATA(lv_lang)   = COND spras( WHEN is_p-language IS INITIAL THEN sy-langu
+                                  ELSE to_upper( condense( is_p-language ) ) ).
+    IF lv_object IS INITIAL.
+      lv_object = 'TEXT'.                       " SO10 standard texts
+    ENDIF.
+    need_table( 'STXH' ).
+
+    IF lv_name IS INITIAL OR lv_name CA '*%'.
+      " List text headers matching the pattern.
+      DATA(lv_pat) = replace( val = CONV string( COND #( WHEN lv_name IS INITIAL THEN `*` ELSE lv_name ) )
+                              sub = `*` with = `%` occ = 0 ).
+      IF lv_id IS INITIAL.
+        SELECT * FROM stxh WHERE tdobject = @lv_object AND tdname LIKE @lv_pat
+          ORDER BY tdname, tdid, tdspras INTO TABLE @lt_hdr UP TO @is_p-max_rows ROWS.
+      ELSE.
+        SELECT * FROM stxh WHERE tdobject = @lv_object AND tdname LIKE @lv_pat AND tdid = @lv_id
+          ORDER BY tdname, tdid, tdspras INTO TABLE @lt_hdr UP TO @is_p-max_rows ROWS.
+      ENDIF.
+      LOOP AT lt_hdr INTO DATA(ls_hdr).
+        lv_no = lv_no + 1.
+        ls_text = VALUE #( kind = 'TEXT_HEADER' object = ls_hdr-tdobject name = ls_hdr-tdname
+                           id = ls_hdr-tdid language = ls_hdr-tdspras title = ls_hdr-tdtitle
+                           changed_by = COND #( WHEN ls_hdr-tdluser IS NOT INITIAL THEN ls_hdr-tdluser
+                                                ELSE ls_hdr-tdfuser )
+                           changed_on = |{ COND d( WHEN ls_hdr-tdldate IS NOT INITIAL THEN ls_hdr-tdldate
+                                                   ELSE ls_hdr-tdfdate ) DATE = ISO }| ).
+        APPEND to_row( iv_no = lv_no is_data = ls_text ) TO rt_rows.
+      ENDLOOP.
+      RETURN.
+    ENDIF.
+
+    IF lv_id IS INITIAL.
+      lv_id = 'ST'.                             " standard text
+    ENDIF.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        id                      = lv_id
+        language                = lv_lang
+        name                    = lv_name
+        object                  = lv_object
+      TABLES
+        lines                   = lt_lines
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+      fail( |Text { lv_object } / { lv_name } / { lv_id } / { lv_lang } not found (READ_TEXT { sy-subrc }).| ).
+    ENDIF.
+    " Each line keeps its SAPscript format column ("*" paragraph, "/" new line, "=" continue).
+    LOOP AT lt_lines INTO DATA(ls_line).
+      APPEND |{ ls_line-tdformat WIDTH = 2 }{ ls_line-tdline }| TO lt_out.
+    ENDLOOP.
+    SELECT SINGLE tdtitle FROM stxh WHERE tdobject = @lv_object AND tdname = @lv_name
+      AND tdid = @lv_id AND tdspras = @lv_lang INTO @ls_text-title.
+    ls_text-kind       = 'TEXT'.
+    ls_text-object     = lv_object.
+    ls_text-name       = lv_name.
+    ls_text-id         = lv_id.
+    ls_text-language   = lv_lang.
+    ls_text-line_count = lines( lt_out ).
+    CONCATENATE LINES OF lt_out INTO ls_text-text SEPARATED BY cl_abap_char_utilities=>newline.
+    APPEND to_row( iv_no = 1 is_data = ls_text ) TO rt_rows.
   ENDMETHOD.
 
 

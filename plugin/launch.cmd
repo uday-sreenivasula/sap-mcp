@@ -7,7 +7,7 @@ setlocal
 set "ROOT=%~dp0"
 set "NAME=sap-mcp-plugin"
 set "ENTRY=run.py"
-set "VER=0.7.7"
+set "VER=0.7.8"
 set "DATA=%LOCALAPPDATA%\%NAME%"
 if not exist "%DATA%" mkdir "%DATA%"
 

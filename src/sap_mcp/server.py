@@ -12,7 +12,7 @@ from typing import Optional
 
 from mcp.server.mcpserver import MCPServer
 
-from . import __version__, attachments, compute, config_tables, reports, tool_text, usage
+from . import __version__, attachments, compute, config_tables, printforms, reports, source, tool_text, usage
 from . import credentials
 from . import environments as envs
 from .config import ConfigError, config_source, is_configured, load_config
@@ -28,6 +28,7 @@ OData (query_entity, get_service_metadata) only when a table read is refused, to
 WHERE = ABAP Open SQL: '1000', leading zeros ('0001010000'), dates '20260401'.
 KEEP IT SMALL: big results go to Excel (you get a summary + path); ask for totals, only needed fields; the per-conversation SAP allowance can only be extended by the user.
 Key tables: ACDOCA (RLDNR '0L', RBUKRS, GJAHR, POPER, BELNR, RACCT, HSL signed amount in company-code currency, BUDAT, PRCTR, KOSTL, LIFNR, KUNNR); BKPF/BSEG; BSID/BSAD, BSIK/BSAK (open/cleared AR/AP); SKA1/SKAT/SKB1; VBAK/VBAP, LIKP/LIPS, VBRK/VBRP; EKKO/EKPO/EKBE, RBKP/RSEG; MARA/MARC/MBEW, MATDOC; LFA1/KNA1/BUT000; T001, T030, T685/T683S.
+DEVELOPMENT: get_sap_source reads ABAP code (program, include, class, function module, or a tcode); get_smartform shows a Smart Form's outline and saves its XML; read_sap_text reads SO10 texts; TNAPR (read_sap_table) maps output types to print programs and forms.
 If old stand-alone SAP tools (mcp__sap__...) still appear: tell the user to restart Claude, then log in to SAP again."""
 # Company specifics (company codes, chart of accounts, currency) come from the
 # site settings, e.g. "Company: 1000 Example Ltd; chart of accounts INT; currency EUR."
@@ -2857,6 +2858,67 @@ def get_attachments(
         company_code=company_code, object_type=object_type,
         object_key=object_key, download_files=download, folder=folder or None,
     ))
+
+
+@mcp.tool()
+def get_sap_source(name: str, object_type: str = "", with_includes: bool = False, folder: str = "") -> str:
+    """ABAP source code of a program, include, class, interface or function
+    module, or of the program behind a transaction code.
+
+    SAP resolves the name and checks the user's S_DEVELOP display
+    authorization. The code is saved as .abap files under
+    ``Downloads/SAP source``; small sources also come back inline, large
+    ones as a preview plus the file path.
+
+    Args:
+        name: Object name or transaction code, e.g. ``"ZFI_DEBTORS_AGEING"``,
+            ``"ZCL_INVOICE_PRINT"``, ``"Z_MIRO_PRINT"``.
+        object_type: Optional ``PROG`` | ``INCL`` | ``CLAS`` | ``INTF`` |
+            ``FUNC`` | ``TCODE`` when the name is ambiguous.
+        with_includes: Also fetch the program's customer includes (Z*, Y*,
+            namespaces). SAP's own includes are only listed.
+        folder: Save here instead of the default folder.
+    """
+    return _safe(lambda: source.get_source(
+        _get_client(), name, object_type=object_type, with_includes=with_includes, folder=folder))
+
+
+@mcp.tool()
+def get_smartform(name: str, folder: str = "", top: int = 200) -> str:
+    """A Smart Form's structure and definition, for print-form development.
+
+    With a form name: outline (pages, windows, text / code / table nodes with
+    captions, text previews and program-line counts), the generated function
+    module, and the complete form XML saved to ``Downloads/SAP source/smartforms``.
+    With a pattern (``"ZMR*"``): the matching forms. Read-only: editing a form
+    is done in the Form Builder (or the sap-write plugin).
+
+    Args:
+        name: Form name (``"ZMR_INVOICE"``) or pattern (``"Z*INV*"``).
+        folder: Save the XML here instead of the default folder.
+        top: Maximum forms in list mode.
+    """
+    return _safe(lambda: printforms.get_smartform(_get_client(), name, folder=folder, top=top))
+
+
+@mcp.tool()
+def read_sap_text(name: str = "", object: str = "TEXT", id: str = "", language: str = "", top: int = 200) -> str:
+    """SAPscript / SO10 texts as print forms include them (READ_TEXT).
+
+    With a name: the text lines, each prefixed by its format column. With a
+    pattern or no name: the matching text headers.
+
+    Args:
+        name: Text name, e.g. ``"Z_INVOICE_FOOTER"``; ``"Z_INV*"`` lists.
+        object: Text object, default ``"TEXT"`` (SO10 standard texts); e.g.
+            ``"MATERIAL"``, ``"VBBK"`` for document texts.
+        id: Text id, default ``"ST"`` for standard texts (``"GRUN"``,
+            ``"0001"`` ... for object texts).
+        language: One-letter SAP language key; default the logon language.
+        top: Maximum headers in list mode.
+    """
+    return _safe(lambda: printforms.read_text(
+        _get_client(), name, object=object, id=id, language=language, top=top))
 
 
 @mcp.tool()

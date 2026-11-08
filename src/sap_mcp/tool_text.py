@@ -89,6 +89,23 @@ SHORT: dict[str, str] = {
         "(needs year), po, fi (needs year + company_code). Or raw object_type + object_key (e.g. BUS2091). "
         "download=false only lists."
     ),
+    # --- development: code, print forms, texts
+    "get_sap_source": (
+        "ABAP source of a program, include, class, interface or function module, or the program behind a "
+        "tcode (SAP resolves the name; S_DEVELOP display check). Saved as .abap under Downloads/SAP source; "
+        "small sources inline, large ones preview + path. object_type PROG|INCL|CLAS|INTF|FUNC|TCODE if "
+        "ambiguous; with_includes also fetches customer (Z/Y/namespace) includes."
+    ),
+    "get_smartform": (
+        "Smart Form for print-form work: outline (pages > windows > text/code/table nodes with captions, "
+        "text previews, program-line counts), generated function module, full form XML saved under "
+        "Downloads/SAP source/smartforms. name with * lists forms. Read-only."
+    ),
+    "read_sap_text": (
+        "SO10 / SAPscript text lines (READ_TEXT), each prefixed by its format column (* paragraph, / new "
+        "line, = continue). object default TEXT, id default ST, language default logon. name with * or "
+        "empty lists headers."
+    ),
     # --- OData (only when clearly better than a table read)
     "list_services": "Search the Gateway catalog for OData services by name/title substring. Prefer a search term over paging.",
     "get_service_metadata": (

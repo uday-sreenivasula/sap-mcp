@@ -1,6 +1,6 @@
 {
   "name": "sap",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "description": "SAP S/4HANA connector (production and development systems): reads any SAP table, computes totals, trial balance, ageing, GR/IR and duplicate checks inside SAP, runs your SAP GUI reports and exports them to Excel, and fetches document attachments. Each user logs in with their own SAP user. Works on Windows and macOS; needs network access to your SAP Gateway.",
   "author": {
     "name": "Uday Sreenivasula"

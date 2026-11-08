@@ -16,10 +16,11 @@ def test_every_core_tool_has_a_compact_text():
 
 
 def test_tool_list_stays_small():
-    """~3.2k tokens today (was ~6.4k). Raise the bar only for a good reason."""
+    """~3.7k tokens with 25 tools (was ~6.4k with 22). Raise the bar only for a good reason,
+    e.g. a new tool, and say so in the commit."""
     size = sum(len(json.dumps({"name": t.name, "description": t.description,
                                "inputSchema": t.parameters})) for t in _tools())
-    assert size + len(srv._INSTRUCTIONS) < 14000, size
+    assert size + len(srv._INSTRUCTIONS) < 16000, size
 
 
 def test_schemas_have_no_noise_but_keep_meaning():

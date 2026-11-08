@@ -193,6 +193,9 @@ What `Compute(Operation, Params)` does inside SAP:
 | `GRIR` | EKBE goods receipt vs invoice receipt per PO item (items that differ) |
 | `LIST_REPORTS` / `REPORT_INFO` / `RUN_REPORT` | Find SAP GUI reports, show their selections and variants, run them (ALV output captured as data) |
 | `LIST_ATTACHMENTS` / `GET_ATTACHMENT` | GOS attachments of a document |
+| `GET_SOURCE` | ABAP source of a program, include, class, interface or function module (or the program behind a tcode), active version, after an S_DEVELOP display check; customer includes on request |
+| `GET_SMARTFORM` | A Smart Form's definition as XML (`CL_SSF_FB_SMART_FORM->XML_DOWNLOAD`, the Form Builder's download) plus its generated function module; a pattern lists forms |
+| `READ_TEXT` | SAPscript / SO10 texts via `READ_TEXT`, with the format column; a pattern lists text headers |
 
 **SEGW (DEV), project `ZCFG_READ`:**
 
@@ -225,6 +228,9 @@ What `Compute(Operation, Params)` does inside SAP:
    Then tell Claude, and it will test every operation end to end on dev.
 6. **Transport to PRD.** Workbench request only. After the import, run the two
    cache clean-ups in PRD as well.
+
+**Adding an operation later** (as `GET_SOURCE`, `GET_SMARTFORM` and `READ_TEXT` were): paste the new
+class source in SE24, activate, run the two cache clean-ups, transport the class. No SEGW step.
 
 Reports run with `SUBMIT ... AND RETURN` under the user's own SAP user. Any
 executable report can be run, including ones that post. Claude is instructed
