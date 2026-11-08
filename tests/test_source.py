@@ -149,3 +149,29 @@ def test_read_text_single_and_list(sap):
     out = json.loads(_call(read_sap_text, name="Z_F*", language="e"))
     assert sap["seen"][1][1]["LANGUAGE"] == "E"
     assert out["count"] == 1 and out["texts"][0]["name"] == "Z_FOOTER"
+
+
+def test_program_parts_texts_status_and_screens(sap, tmp_path):
+    from sap_mcp.server import get_program_parts
+    sap["rows"] = [
+        {"KIND": "TEXT", "ID": "R", "KEY": "", "TEXT": "Vendor payment report"},
+        {"KIND": "TEXT", "ID": "I", "KEY": "001", "TEXT": "Approve"},
+        {"KIND": "TEXT", "ID": "S", "KEY": "S_BUKRS", "TEXT": "Company code"},
+        {"KIND": "CUA", "ADM": {"PFKCODE": "000001"},
+         "STA": [{"CODE": "ZSTATUS", "MODAL": "", "PFKCODE": "000001", "BUTCODE": "000001", "ACTCODE": "000001"}],
+         "FUN": [{"CODE": "POST", "TEXTNO": "001", "TEXT_TYPE": "F", "TEXT": "Post payment"}],
+         "TIT": [{"CODE": "T01", "TEXT": "Vendor payments"}],
+         "PFK": [{"CODE": "000001", "PFNO": "08", "FUNCODE": "POST"}],
+         "BUT": [], "ACT": [], "MEN": [], "MTX": [], "SET": [], "DOC": [], "BIV": []},
+        {"KIND": "SCREEN", "DYNNR": "1000", "TYPE": "S", "TITLE": "Selection"},
+    ]
+    out = json.loads(_call(get_program_parts, name="zfi_vendor_pymt_report"))
+    assert sap["seen"][0] == ("PROGRAM_PARTS", {"REPORT": "ZFI_VENDOR_PYMT_REPORT"})
+    assert out["texts"] == {"title": "Vendor payment report", "text_elements": {"001": "Approve"},
+                            "selection_texts": {"S_BUKRS": "Company code"}}
+    assert out["gui"]["statuses"] == [{"code": "ZSTATUS", "pfkcode": "000001", "butcode": "000001",
+                                       "actcode": "000001"}]
+    assert out["gui"]["function_texts"][0]["text"] == "Post payment"
+    assert out["screens"] == [{"screen": "1000", "type": "S", "title": "Selection"}]
+    saved = json.loads((tmp_path / "source" / "ZFI_VENDOR_PYMT_REPORT.parts.json").read_text(encoding="utf-8"))
+    assert saved["gui"]["function_keys"] == [{"code": "000001", "pfno": "08", "funcode": "POST"}]

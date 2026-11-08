@@ -96,6 +96,11 @@ SHORT: dict[str, str] = {
         "small sources inline, large ones preview + path. object_type PROG|INCL|CLAS|INTF|FUNC|TCODE if "
         "ambiguous; with_includes also fetches customer (Z/Y/namespace) includes."
     ),
+    "get_program_parts": (
+        "What a program has outside its source: text pool (title, text elements, selection texts), GUI "
+        "statuses with function texts, titles, function keys, pushbuttons, and screens with titles. "
+        "name = program or tcode. Saved as JSON under Downloads/SAP source; texts/statuses/titles inline."
+    ),
     "get_smartform": (
         "Smart Form for print-form work: outline (pages > windows > text/code/table nodes with captions, "
         "text previews, program-line counts), generated function module, full form XML saved under "

@@ -13,7 +13,7 @@ the main design goal. It runs as a Claude plugin on Windows and macOS.
 | Calculations inside SAP | `trial_balance_by_period` (ACDOCA), `open_items_ageing`, `grir_differences`, `find_duplicates` |
 | SAP GUI reports | `find_sap_reports`, `sap_report_info`, `run_sap_report` (ALV output saved to Excel) |
 | Attachments | `get_attachments` (GOS files saved to Downloads, never pasted into the chat) |
-| Development | `get_sap_source` (ABAP code of programs, classes, function modules), `get_smartform` (Smart Form outline + XML), `read_sap_text` (SO10 texts) |
+| Development | `get_sap_source` (ABAP code of programs, classes, function modules), `get_program_parts` (text elements, GUI statuses, screens), `get_smartform` (Smart Form outline + XML), `read_sap_text` (SO10 texts) |
 | Customizing shortcuts | `condition_types`, `pricing_procedure`, `account_determination` |
 | OData | `list_services`, `get_service_metadata`, `query_entity` |
 | Session | `sap_login`, `whoami`, `list_environments`, `switch_environment`, `token_budget` |

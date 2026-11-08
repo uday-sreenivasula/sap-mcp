@@ -196,6 +196,7 @@ What `Compute(Operation, Params)` does inside SAP:
 | `GET_SOURCE` | ABAP source of a program, include, class, interface or function module (or the program behind a tcode), active version, after an S_DEVELOP display check; customer includes on request |
 | `GET_SMARTFORM` | A Smart Form's definition as XML (`CL_SSF_FB_SMART_FORM->XML_DOWNLOAD`, the Form Builder's download) plus its generated function module; a pattern lists forms |
 | `READ_TEXT` | SAPscript / SO10 texts via `READ_TEXT`, with the format column; a pattern lists text headers |
+| `PROGRAM_PARTS` | A program's text pool (`READ TEXTPOOL`), GUI statuses / function texts / menus / titles (`RS_CUA_INTERNAL_FETCH`) and screens (D020S / D020T) |
 
 **SEGW (DEV), project `ZCFG_READ`:**
 

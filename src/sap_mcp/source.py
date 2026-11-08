@@ -8,6 +8,7 @@ sources also come back inline, large ones as a preview plus the file path.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -104,4 +105,74 @@ def get_source(
         out["preview"] = "\n".join(lines[:PREVIEW_LINES])
         out["note"] = (f"{total:,} characters of source were saved to the file(s) above; only the first "
                        f"{PREVIEW_LINES} lines of {main['NAME']} are shown here. Read the saved file for the rest.")
+    return out
+
+
+# ------------------------------------------------ text pool, GUI status, screens
+
+TEXT_IDS = {"R": "title", "I": "text_elements", "S": "selection_texts", "H": "list_headers"}
+
+
+def _clean(rows: list[dict]) -> list[dict]:
+    """Lower-case keys, blanks dropped: CUA tables are wide and mostly empty."""
+    return [{k.lower(): v for k, v in r.items() if v not in (None, "", " ", 0, False)} for r in rows]
+
+
+def program_parts(client: SapODataClient, name: str, *, folder: str = "") -> dict:
+    obj = _object_name(name)
+    try:
+        rows = compute(client, "PROGRAM_PARTS", {"REPORT": obj}, deadline=SOURCE_SECONDS)
+    except SapODataError as e:
+        if "Unknown Operation" in str(e):
+            raise SapODataError(
+                e.status_code,
+                "The ZCFG_READ_SRV service on this SAP system is an older version without "
+                "PROGRAM_PARTS (sap_side/README.md, section 7).", e.body) from e
+        raise
+
+    texts: dict = {}
+    for r in rows:
+        if r.get("KIND") != "TEXT":
+            continue
+        bucket = TEXT_IDS.get(r.get("ID"), r.get("ID"))
+        if bucket == "title":
+            texts["title"] = r.get("TEXT", "")
+        else:
+            texts.setdefault(bucket, {})[r.get("KEY", "")] = r.get("TEXT", "")
+
+    cua = next((r for r in rows if r.get("KIND") == "CUA"), None)
+    gui = None
+    if cua:
+        gui = {
+            "statuses": _clean(cua.get("STA") or []),
+            "function_texts": _clean(cua.get("FUN") or []),
+            "titles": _clean(cua.get("TIT") or []),
+            "function_keys": _clean(cua.get("PFK") or []),
+            "pushbuttons": _clean(cua.get("BUT") or []),
+            "menu_bars": _clean(cua.get("ACT") or []),
+            "menus": _clean(cua.get("MEN") or []),
+            "menu_texts": _clean(cua.get("MTX") or []),
+            "status_sets": _clean(cua.get("SET") or []),
+        }
+    screens = [{"screen": r.get("DYNNR"), "type": r.get("TYPE"), "title": r.get("TITLE") or None}
+               for r in rows if r.get("KIND") == "SCREEN"]
+
+    full = {"program": obj, "texts": texts, "gui": gui, "screens": screens}
+    where = Path(folder) if folder else default_folder()
+    where.mkdir(parents=True, exist_ok=True)
+    target = where / f"{_SAFE.sub('_', obj)}.parts.json"
+    target.write_text(json.dumps(full, indent=1, ensure_ascii=False), encoding="utf-8")
+
+    out: dict = {"program": obj, "saved_to": str(target), "texts": texts, "screens": screens}
+    if gui:
+        out["gui"] = {"statuses": gui["statuses"], "titles": gui["titles"],
+                      "function_texts": gui["function_texts"]}
+        out["gui_note"] = ("Function keys, pushbuttons and menus per status are in the saved file "
+                           "(keys function_keys, pushbuttons, menu_bars, menus, menu_texts).")
+    else:
+        out["gui"] = None
+    if len(json.dumps(out, ensure_ascii=False)) > INLINE_CHARS:
+        out["gui"] = {"statuses": gui["statuses"] if gui else [], "titles": gui["titles"] if gui else []}
+        out["texts"] = {k: (v if k == "title" else f"{len(v)} entries, see file") for k, v in texts.items()}
+        out["note"] = "Large: details are in the saved file."
     return out

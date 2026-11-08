@@ -30,6 +30,10 @@
 "!                      function module; REPORT with * lists forms instead.
 "!     READ_TEXT        a SAPscript / SO10 text (TEXT_OBJECT, TEXT_NAME,
 "!                      TEXT_ID, LANGUAGE); TEXT_NAME with * lists texts.
+"!     PROGRAM_PARTS    what is not in a program's source: text pool (text
+"!                      elements, selection texts, title), GUI statuses,
+"!                      function texts, menus, titles (RS_CUA_INTERNAL_FETCH)
+"!                      and screens (D020S/D020T).
 "!     Every operation checks S_TABU_NAM for the tables it reads.
 "!
 "! Security model
@@ -193,6 +197,11 @@ CLASS zcl_zcfg_read_dpc_ext DEFINITION
       RAISING   /iwbep/cx_mgw_busi_exception.
 
     METHODS op_text
+      IMPORTING is_p           TYPE ts_params
+      RETURNING VALUE(rt_rows) TYPE tt_rows
+      RAISING   /iwbep/cx_mgw_busi_exception.
+
+    METHODS op_parts
       IMPORTING is_p           TYPE ts_params
       RETURNING VALUE(rt_rows) TYPE tt_rows
       RAISING   /iwbep/cx_mgw_busi_exception.
@@ -426,10 +435,12 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
         rt_rows = op_smartform( ls_p ).
       WHEN 'READ_TEXT'.
         rt_rows = op_text( ls_p ).
+      WHEN 'PROGRAM_PARTS'.
+        rt_rows = op_parts( ls_p ).
       WHEN OTHERS.
         fail( |Unknown Operation '{ lv_op }'. Use AGGREGATE, DUPLICATES, TRIAL_BALANCE, AGEING, GRIR, | &&
               |LIST_REPORTS, REPORT_INFO, RUN_REPORT, LIST_ATTACHMENTS, GET_ATTACHMENT, GET_SOURCE, | &&
-              |GET_SMARTFORM or READ_TEXT.| ).
+              |GET_SMARTFORM, READ_TEXT or PROGRAM_PARTS.| ).
     ENDCASE.
   ENDMETHOD.
 
@@ -1465,6 +1476,112 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
     ls_text-line_count = lines( lt_out ).
     CONCATENATE LINES OF lt_out INTO ls_text-text SEPARATED BY cl_abap_char_utilities=>newline.
     APPEND to_row( iv_no = 1 is_data = ls_text ) TO rt_rows.
+  ENDMETHOD.
+
+
+  METHOD op_parts.
+    " Everything of a program that is not in its source text.
+    TYPES: BEGIN OF ts_text,
+             kind  TYPE string,
+             id    TYPE string,       " R title, I text element, S selection text, H header
+             key   TYPE string,
+             text  TYPE string,
+           END OF ts_text,
+           BEGIN OF ts_screen,
+             kind   TYPE string,
+             dynnr  TYPE string,
+             type   TYPE string,
+             title  TYPE string,
+           END OF ts_screen,
+           BEGIN OF ts_cua,
+             kind TYPE string,
+             adm  TYPE rsmpe_adm,
+             sta  TYPE STANDARD TABLE OF rsmpe_stat WITH EMPTY KEY,
+             fun  TYPE STANDARD TABLE OF rsmpe_funt WITH EMPTY KEY,
+             men  TYPE STANDARD TABLE OF rsmpe_men  WITH EMPTY KEY,
+             mtx  TYPE STANDARD TABLE OF rsmpe_mnlt WITH EMPTY KEY,
+             act  TYPE STANDARD TABLE OF rsmpe_act  WITH EMPTY KEY,
+             but  TYPE STANDARD TABLE OF rsmpe_but  WITH EMPTY KEY,
+             pfk  TYPE STANDARD TABLE OF rsmpe_pfk  WITH EMPTY KEY,
+             set  TYPE STANDARD TABLE OF rsmpe_staf WITH EMPTY KEY,
+             doc  TYPE STANDARD TABLE OF rsmpe_atrt WITH EMPTY KEY,
+             tit  TYPE STANDARD TABLE OF rsmpe_titt WITH EMPTY KEY,
+             biv  TYPE STANDARD TABLE OF rsmpe_buts WITH EMPTY KEY,
+           END OF ts_cua.
+    DATA: lt_tp  TYPE STANDARD TABLE OF textpool,
+          ls_cua TYPE ts_cua,
+          lv_no  TYPE i.
+
+    DATA(lv_prog) = CONV syrepid( to_upper( condense( is_p-report ) ) ).
+    IF lv_prog IS INITIAL.
+      fail( 'REPORT (program name or transaction code) is required.' ).
+    ENDIF.
+    SELECT SINGLE name FROM trdir WHERE name = @lv_prog INTO @lv_prog.
+    IF sy-subrc <> 0.
+      SELECT SINGLE pgmna FROM tstc WHERE tcode = @lv_prog INTO @DATA(lv_pgm).
+      IF sy-subrc <> 0 OR lv_pgm IS INITIAL.
+        fail( |{ lv_prog } is neither a program nor a transaction code.| ).
+      ENDIF.
+      lv_prog = lv_pgm.
+    ENDIF.
+    need_source( iv_objtype = 'PROG' iv_objname = CONV #( lv_prog ) ).
+
+    " Text pool in the logon language, then the original language as fallback.
+    READ TEXTPOOL lv_prog INTO lt_tp LANGUAGE sy-langu.
+    IF lt_tp IS INITIAL.
+      SELECT SINGLE rload FROM trdir WHERE name = @lv_prog INTO @DATA(lv_lang).
+      IF lv_lang IS NOT INITIAL AND lv_lang <> sy-langu.
+        READ TEXTPOOL lv_prog INTO lt_tp LANGUAGE lv_lang.
+      ENDIF.
+    ENDIF.
+    LOOP AT lt_tp INTO DATA(ls_tp).
+      lv_no = lv_no + 1.
+      APPEND to_row( iv_no = lv_no is_data = VALUE ts_text( kind = 'TEXT' id = ls_tp-id key = ls_tp-key
+                                                            text = ls_tp-entry ) ) TO rt_rows.
+    ENDLOOP.
+
+    " GUI statuses, function texts, menus, titles (Menu Painter), active version.
+    CALL FUNCTION 'RS_CUA_INTERNAL_FETCH'
+      EXPORTING
+        program         = lv_prog
+        language        = sy-langu
+        state           = 'A'
+      IMPORTING
+        adm             = ls_cua-adm
+      TABLES
+        sta             = ls_cua-sta
+        fun             = ls_cua-fun
+        men             = ls_cua-men
+        mtx             = ls_cua-mtx
+        act             = ls_cua-act
+        but             = ls_cua-but
+        pfk             = ls_cua-pfk
+        set             = ls_cua-set
+        doc             = ls_cua-doc
+        tit             = ls_cua-tit
+        biv             = ls_cua-biv
+      EXCEPTIONS
+        not_found       = 1
+        unknown_version = 2
+        OTHERS          = 3.
+    IF sy-subrc = 0 AND ( ls_cua-sta IS NOT INITIAL OR ls_cua-tit IS NOT INITIAL ).
+      ls_cua-kind = 'CUA'.
+      lv_no = lv_no + 1.
+      APPEND to_row( iv_no = lv_no is_data = ls_cua ) TO rt_rows.
+    ENDIF.
+
+    " Screens (dynpros) with their titles.
+    SELECT s~dnum, s~type, t~dtxt FROM d020s AS s
+      LEFT OUTER JOIN d020t AS t ON t~prog = s~prog AND t~dynr = s~dnum AND t~lang = @sy-langu
+      WHERE s~prog = @lv_prog
+      ORDER BY s~dnum
+      INTO TABLE @DATA(lt_scr).
+    LOOP AT lt_scr INTO DATA(ls_scr).
+      lv_no = lv_no + 1.
+      APPEND to_row( iv_no = lv_no is_data = VALUE ts_screen( kind = 'SCREEN' dynnr = ls_scr-dnum
+                                                              type = ls_scr-type title = ls_scr-dtxt ) )
+             TO rt_rows.
+    ENDLOOP.
   ENDMETHOD.
 
 

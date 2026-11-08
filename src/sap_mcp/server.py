@@ -28,7 +28,7 @@ OData (query_entity, get_service_metadata) only when a table read is refused, to
 WHERE = ABAP Open SQL: '1000', leading zeros ('0001010000'), dates '20260401'.
 KEEP IT SMALL: big results go to Excel (you get a summary + path); ask for totals, only needed fields; the per-conversation SAP allowance can only be extended by the user.
 Key tables: ACDOCA (RLDNR '0L', RBUKRS, GJAHR, POPER, BELNR, RACCT, HSL signed amount in company-code currency, BUDAT, PRCTR, KOSTL, LIFNR, KUNNR); BKPF/BSEG; BSID/BSAD, BSIK/BSAK (open/cleared AR/AP); SKA1/SKAT/SKB1; VBAK/VBAP, LIKP/LIPS, VBRK/VBRP; EKKO/EKPO/EKBE, RBKP/RSEG; MARA/MARC/MBEW, MATDOC; LFA1/KNA1/BUT000; T001, T030, T685/T683S.
-DEVELOPMENT: get_sap_source reads ABAP code (program, include, class, function module, or a tcode); get_smartform shows a Smart Form's outline and saves its XML; read_sap_text reads SO10 texts; TNAPR (read_sap_table) maps output types to print programs and forms.
+DEVELOPMENT: get_sap_source reads ABAP code (program, include, class, function module, or a tcode); get_program_parts its text elements, GUI statuses and screens; get_smartform shows a Smart Form's outline and saves its XML; read_sap_text reads SO10 texts; TNAPR (read_sap_table) maps output types to print programs and forms.
 If old stand-alone SAP tools (mcp__sap__...) still appear: tell the user to restart Claude, then log in to SAP again."""
 # Company specifics (company codes, chart of accounts, currency) come from the
 # site settings, e.g. "Company: 1000 Example Ltd; chart of accounts INT; currency EUR."
@@ -2881,6 +2881,22 @@ def get_sap_source(name: str, object_type: str = "", with_includes: bool = False
     """
     return _safe(lambda: source.get_source(
         _get_client(), name, object_type=object_type, with_includes=with_includes, folder=folder))
+
+
+@mcp.tool()
+def get_program_parts(name: str, folder: str = "") -> str:
+    """What a program has besides its source: text pool (title, text
+    elements, selection texts), GUI statuses with their function texts,
+    titles, function keys and pushbuttons, and its screens with titles.
+
+    Complements get_sap_source. Everything is saved as JSON under
+    ``Downloads/SAP source``; texts, statuses and titles also come back inline.
+
+    Args:
+        name: Program name or transaction code.
+        folder: Save here instead of the default folder.
+    """
+    return _safe(lambda: source.program_parts(_get_client(), name, folder=folder))
 
 
 @mcp.tool()
