@@ -142,6 +142,8 @@ def program_parts(client: SapODataClient, name: str, *, folder: str = "") -> dic
             # Text pool 'S' entries: 8-char flag area ('D' = text taken from the
             # data element), then the text.
             text = entry[8:].strip() if len(entry) > 8 else ""
+            if text == ".":          # placeholder SAP writes when the DDIC text is used
+                text = ""
             texts.setdefault(bucket, {})[r.get("KEY", "")] = text or (
                 "(from data element)" if entry[:1] == "D" else "")
         else:

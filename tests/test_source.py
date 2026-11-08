@@ -97,17 +97,22 @@ def test_old_service_without_get_source_says_so(sap):
     assert out["error"] == "sap" and "older version without GET_SOURCE" in out["message"]
 
 
-SF_XML = """<?xml version="1.0"?><smartform><sf:SMARTFORM xmlns:sf="urn:sap-com:SmartForms:2000:internal-structure">
+SF_XML = """\ufeff<?xml version="1.0" encoding="utf-16"?><smartform><sf:SMARTFORM>
 <HEADER><FORMNAME>ZMR_INVOICE</FORMNAME></HEADER>
-<PAGE><INAME>FIRST</INAME><NODETYPE>PA</NODETYPE><CAPTION>First page</CAPTION>
-  <WINDOW><INAME>MAIN</INAME><NODETYPE>WI</NODETYPE><CAPTION>Main window</CAPTION>
-    <TEXT><INAME>HEADER_TXT</INAME><NODETYPE>TE</NODETYPE><CAPTION>Heading</CAPTION>
-      <ITFTEXT><item><TDFORMAT>*</TDFORMAT><TDLINE>Tax Invoice</TDLINE></item>
-               <item><TDFORMAT>/</TDFORMAT><TDLINE>&amp;GV_NUMBER&amp;</TDLINE></item></ITFTEXT></TEXT>
-    <CODE><INAME>CALC</INAME><NODETYPE>CO</NODETYPE><CAPTION>Totals</CAPTION>
-      <CODE><item>gv_total = gv_net + gv_tax.</item><item>CONDENSE gv_total.</item></CODE></CODE>
-  </WINDOW>
-</PAGE></sf:SMARTFORM></smartform>"""
+<sf:NODE ID="1 "><NODETYPE>PA</NODETYPE><sf:OBJ><sf:PAGE><NAME><INAME>%PAGE1</INAME></NAME><CAPTION>First page</CAPTION>
+<T_CAPTION><item><INAME>%PAGE1</INAME><CAPTION>First page</CAPTION></item></T_CAPTION></sf:PAGE></sf:OBJ>
+<sf:SUCC><sf:item><sf:NODE><NODETYPE>WI</NODETYPE><sf:OBJ><sf:WINDOW><NAME><INAME>MAIN</INAME></NAME><CAPTION>Main window</CAPTION>
+  <sf:PROC_CTRL><sf:NODE><NODETYPE>RC</NODETYPE><sf:SUCC>
+    <sf:item><sf:NODE><NODETYPE>TI</NODETYPE><sf:OBJ><sf:TEXT><NAME><INAME>HEADER_TXT</INAME></NAME><CAPTION>Heading</CAPTION>
+      <TEXT><item><TDFORMAT>*</TDFORMAT><TDLINE>Tax Invoice</TDLINE></item><item><TDLINE>&amp;GV_NUMBER&amp;</TDLINE></item></TEXT>
+    </sf:TEXT></sf:OBJ></sf:NODE></sf:item>
+    <sf:item><sf:NODE><NODETYPE>CO</NODETYPE><sf:OBJ><sf:CODE><NAME><INAME>CALC</INAME></NAME><CAPTION>Totals</CAPTION>
+      <PLIST><item><OPD>GV_NET</OPD></item></PLIST><CODE><item>gv_total = gv_net + gv_tax.</item><item>CONDENSE gv_total.</item></CODE>
+    </sf:CODE></sf:OBJ></sf:NODE></sf:item>
+    <sf:item><sf:NODE><NODETYPE>SE</NODETYPE><sf:OBJ><sf:SECTION><NAME><INAME>%TEMPLATE1</INAME></NAME><CAPTION>Lines</CAPTION><SECTTYPE>S</SECTTYPE></sf:SECTION></sf:OBJ></sf:NODE></sf:item>
+  </sf:SUCC></sf:NODE></sf:PROC_CTRL>
+</sf:WINDOW></sf:OBJ></sf:NODE></sf:item></sf:SUCC></sf:NODE>
+</sf:SMARTFORM></smartform>"""
 
 
 def test_smartform_outline_and_xml_file(sap, tmp_path):
@@ -119,12 +124,14 @@ def test_smartform_outline_and_xml_file(sap, tmp_path):
     assert sap["seen"][0] == ("GET_SMARTFORM", {"REPORT": "ZMR_INVOICE", "MAX_ROWS": 200})
     assert out["function_module"] == "/1BCDWB/SF00000123"
     lines = out["outline"].splitlines()
-    assert lines[0] == "PAGE FIRST: First page"
+    assert lines[0] == "PAGE %PAGE1: First page"
     assert lines[1] == "  WINDOW MAIN: Main window"
     assert lines[2].startswith("    TEXT HEADER_TXT: Heading  [2 text lines: 'Tax Invoice'")
     assert lines[3] == "    CODE CALC: Totals  [2 program lines]"
-    assert out["nodes"] == {"PAGE": 1, "WINDOW": 1, "TEXT": 1, "CODE": 1}
-    assert (tmp_path / "source" / "smartforms" / "ZMR_INVOICE.xml").read_text(encoding="utf-8") == SF_XML
+    assert lines[4] == "    TEMPLATE %TEMPLATE1: Lines"
+    assert out["nodes"] == {"PAGE": 1, "WINDOW": 1, "TEXT": 1, "CODE": 1, "TEMPLATE": 1}
+    saved = (tmp_path / "source" / "smartforms" / "ZMR_INVOICE.xml").read_text(encoding="utf-8")
+    assert saved.startswith('<?xml version="1.0" encoding="utf-8"?>') and "<sf:SMARTFORM>" in saved
 
 
 def test_smartform_pattern_lists_forms(sap):

@@ -23,12 +23,14 @@ from .sap_client import SCAN_SECONDS, SapODataClient, SapODataError
 from .source import INLINE_CHARS, _SAFE, default_folder
 
 OUTLINE_CHARS = 8000
-#: Smart Forms node types as the Form Builder shows them.
+#: Smart Forms node types as the XML names them (TI = text, SE = section:
+#: template / table / folder, RC / RP = invisible containers).
 NODE_TYPES = {
-    "PA": "PAGE", "WI": "WINDOW", "TE": "TEXT", "TA": "TABLE", "TM": "TEMPLATE", "CO": "CODE",
-    "LO": "LOOP", "CM": "COMMAND", "GR": "GRAPHIC", "AD": "ADDRESS", "FL": "FOLDER",
-    "AL": "ALTERNATIVE", "CP": "COMPLEX_SECTION", "EV": "EVENT", "TX": "TEXT_MODULE",
+    "PA": "PAGE", "WI": "WINDOW", "TI": "TEXT", "TE": "TEXT", "SE": "SECTION", "TA": "TABLE",
+    "TM": "TEMPLATE", "CO": "CODE", "LO": "LOOP", "CM": "COMMAND", "GR": "GRAPHIC", "AD": "ADDRESS",
+    "FL": "FOLDER", "AL": "ALTERNATIVE", "CP": "COMPLEX_SECTION", "EV": "EVENT", "TX": "TEXT_MODULE",
 }
+HIDDEN_TYPES = {"RC", "RP"}
 _FORM = re.compile(r"^[A-Z0-9_/*%]{1,30}$")
 
 
@@ -69,7 +71,7 @@ def get_smartform(client: SapODataClient, name: str, *, folder: str = "", top: i
     sf = next((r for r in rows if r.get("KIND") == "SMARTFORM"), None)
     if not sf:
         raise SapODataError(404, f"SAP returned nothing for Smart Form {form}.", "")
-    xml_text = sf.get("XML") or ""
+    xml_text = (sf.get("XML") or "").lstrip("\ufeff").replace('encoding="utf-16"', 'encoding="utf-8"', 1)
     where = (Path(folder) if folder else default_folder() / "smartforms")
     where.mkdir(parents=True, exist_ok=True)
     target = where / f"{_SAFE.sub('_', sf['NAME'])}.xml"
@@ -91,45 +93,69 @@ def get_smartform(client: SapODataClient, name: str, *, folder: str = "", top: i
     return out
 
 
+def _strip_ns(xml_text: str) -> str:
+    """The Form Builder's XML uses an undeclared ``sf:`` prefix and claims
+    utf-16: drop the declaration and every namespace prefix before parsing."""
+    x = xml_text.lstrip("\ufeff")
+    x = re.sub(r"<\?xml[^>]*\?>", "", x, count=1)
+    x = re.sub(r"<(/?)[A-Za-z_][\w.-]*:", r"<\1", x)
+    x = re.sub(r"\s[A-Za-z_][\w.-]*:([A-Za-z_][\w.-]*)=", r" \1=", x)
+    return x
+
+
 def _outline(xml_text: str) -> tuple[list[str], dict]:
-    """Pages > windows > nodes from the form XML. Tolerant: any element with
-    NODETYPE + INAME children is a node; nesting gives the hierarchy."""
+    """Pages > windows > nodes. A node is an sf:NODE element: NODETYPE plus an
+    OBJ holding the object (WINDOW, CODE, SECTION, ...) whose name is under
+    NAME/INAME; children hang under SUCC (and a window's PROC_CTRL)."""
     try:
-        root = ET.fromstring(xml_text)
+        root = ET.fromstring(_strip_ns(xml_text))
     except ET.ParseError as e:
         return [f"(XML could not be parsed: {e})"], {}
     parent = {c: p for p in root.iter() for c in p}
+    nodes = [el for el in root.iter() if el.tag == "NODE" and el.find("NODETYPE") is not None]
+    node_set = set(nodes)
 
-    def child_text(el, tag):
-        c = el.find(tag)
+    def text_of(el, path):
+        c = el.find(path) if el is not None else None
         return (c.text or "").strip() if c is not None else ""
 
-    nodes = [el for el in root.iter() if el.find("NODETYPE") is not None and el.find("INAME") is not None]
-    node_set = set(nodes)
     lines: list[str] = []
     stats: dict[str, int] = {}
     for el in nodes:
+        ntype = text_of(el, "NODETYPE")
+        if ntype in HIDDEN_TYPES:
+            continue
         depth, p = 0, parent.get(el)
         while p is not None:
-            if p in node_set:
+            if p in node_set and text_of(p, "NODETYPE") not in HIDDEN_TYPES:
                 depth += 1
             p = parent.get(p)
-        ntype = child_text(el, "NODETYPE")
+        obj = el.find("OBJ")
+        objel = next(iter(obj), None) if obj is not None else None
+        name = text_of(objel, "NAME/INAME") or text_of(el, "NAME/INAME")
+        caption = text_of(objel, "CAPTION")
         label = NODE_TYPES.get(ntype, ntype)
+        if ntype == "SE":
+            sect = text_of(objel, "SECTTYPE")
+            label = {"S": "TEMPLATE", "C": "TABLE", "T": "TABLE", "R": "LINE", "E": "CELL",
+                     "F": "FOLDER", "L": "LOOP"}.get(sect, "SECTION" + (f"({sect})" if sect else ""))
         stats[label] = stats.get(label, 0) + 1
         extra = []
-        texts = _own(el, node_set, lambda t: t.endswith("TDLINE"))
-        code = _own(el, node_set, lambda t: t.endswith("ITEM") or t == "CODE_LINE")
-        if texts:
-            extra.append(f"{len(texts)} text lines: {texts[0][:60]!r}")
-        if code and ntype == "CO":
-            extra.append(f"{len(code)} program lines")
-        cond = child_text(el, "CONDITION") or child_text(el, "CONDITIONS")
-        if cond:
-            extra.append("has condition")
-        caption = child_text(el, "CAPTION")
-        lines.append("  " * depth + f"{label} {child_text(el, 'INAME')}"
-                     + (f": {caption}" if caption else "") + (f"  [{'; '.join(extra)}]" if extra else ""))
+        if objel is not None:
+            texts = _own(objel, node_set, lambda tag: tag == "TDLINE")
+            code = _own_under(objel, node_set, "CODE")
+            if texts:
+                extra.append(f"{len(texts)} text lines: {texts[0][:60]!r}")
+            if code:
+                extra.append(f"{len(code)} program lines")
+            if objel.find("COND") is not None and len(objel.find("COND")):
+                extra.append("has condition")
+            if ntype == "GR":
+                g = text_of(objel, "GRAPHIC/NAME") or text_of(objel, "GRAPHIC_NAME") or text_of(objel, "OBJECT")
+                if g:
+                    extra.append(g)
+        lines.append("  " * depth + f"{label} {name}" + (f": {caption}" if caption else "")
+                     + (f"  [{'; '.join(extra)}]" if extra else ""))
     return lines or ["(no nodes found; see the XML file)"], stats
 
 
@@ -142,6 +168,19 @@ def _own(el, node_set, match) -> list[str]:
         if match(child.tag.upper()) and (child.text or "").strip():
             out.append(child.text.strip())
         out.extend(_own(child, node_set, match))
+    return out
+
+
+def _own_under(el, node_set, container: str) -> list[str]:
+    """Item texts under a ``container`` element (e.g. CODE) within this node."""
+    out: list[str] = []
+    for child in el:
+        if child in node_set:
+            continue
+        if child.tag.upper() == container:
+            out.extend((i.text or "").rstrip() for i in child if i.tag.lower() == "item")
+        else:
+            out.extend(_own_under(child, node_set, container))
     return out
 
 
