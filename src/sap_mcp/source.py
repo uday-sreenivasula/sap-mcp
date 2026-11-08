@@ -135,10 +135,17 @@ def program_parts(client: SapODataClient, name: str, *, folder: str = "") -> dic
         if r.get("KIND") != "TEXT":
             continue
         bucket = TEXT_IDS.get(r.get("ID"), r.get("ID"))
+        entry = r.get("TEXT", "") or ""
         if bucket == "title":
-            texts["title"] = r.get("TEXT", "")
+            texts["title"] = entry
+        elif bucket == "selection_texts":
+            # Text pool 'S' entries: 8-char flag area ('D' = text taken from the
+            # data element), then the text.
+            text = entry[8:].strip() if len(entry) > 8 else ""
+            texts.setdefault(bucket, {})[r.get("KEY", "")] = text or (
+                "(from data element)" if entry[:1] == "D" else "")
         else:
-            texts.setdefault(bucket, {})[r.get("KEY", "")] = r.get("TEXT", "")
+            texts.setdefault(bucket, {})[r.get("KEY", "")] = entry
 
     cua = next((r for r in rows if r.get("KIND") == "CUA"), None)
     gui = None
@@ -154,7 +161,9 @@ def program_parts(client: SapODataClient, name: str, *, folder: str = "") -> dic
             "menu_texts": _clean(cua.get("MTX") or []),
             "status_sets": _clean(cua.get("SET") or []),
         }
-    screens = [{"screen": r.get("DYNNR"), "type": r.get("TYPE"), "title": r.get("TITLE") or None}
+    screens = [{"screen": r.get("DYNNR"), "type": r.get("TYPE"),
+                "title": ("selection screen" if str(r.get("TITLE") or "").startswith("SEL_SCREEN")
+                          else r.get("TITLE") or None)}
                for r in rows if r.get("KIND") == "SCREEN"]
 
     full = {"program": obj, "texts": texts, "gui": gui, "screens": screens}

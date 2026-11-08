@@ -156,7 +156,8 @@ def test_program_parts_texts_status_and_screens(sap, tmp_path):
     sap["rows"] = [
         {"KIND": "TEXT", "ID": "R", "KEY": "", "TEXT": "Vendor payment report"},
         {"KIND": "TEXT", "ID": "I", "KEY": "001", "TEXT": "Approve"},
-        {"KIND": "TEXT", "ID": "S", "KEY": "S_BUKRS", "TEXT": "Company code"},
+        {"KIND": "TEXT", "ID": "S", "KEY": "S_BUKRS", "TEXT": "        Company code"},
+        {"KIND": "TEXT", "ID": "S", "KEY": "S_LIFNR", "TEXT": "D       ."},
         {"KIND": "CUA", "ADM": {"PFKCODE": "000001"},
          "STA": [{"CODE": "ZSTATUS", "MODAL": "", "PFKCODE": "000001", "BUTCODE": "000001", "ACTCODE": "000001"}],
          "FUN": [{"CODE": "POST", "TEXTNO": "001", "TEXT_TYPE": "F", "TEXT": "Post payment"}],
@@ -168,7 +169,8 @@ def test_program_parts_texts_status_and_screens(sap, tmp_path):
     out = json.loads(_call(get_program_parts, name="zfi_vendor_pymt_report"))
     assert sap["seen"][0] == ("PROGRAM_PARTS", {"REPORT": "ZFI_VENDOR_PYMT_REPORT"})
     assert out["texts"] == {"title": "Vendor payment report", "text_elements": {"001": "Approve"},
-                            "selection_texts": {"S_BUKRS": "Company code"}}
+                            "selection_texts": {"S_BUKRS": "Company code",
+                                                "S_LIFNR": "(from data element)"}}
     assert out["gui"]["statuses"] == [{"code": "ZSTATUS", "pfkcode": "000001", "butcode": "000001",
                                        "actcode": "000001"}]
     assert out["gui"]["function_texts"][0]["text"] == "Post payment"

@@ -851,8 +851,12 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
     IF sy-subrc = 0.
       RETURN.
     ENDIF.
-    SELECT SINGLE pgmna FROM tstc WHERE tcode = @iv_name INTO @DATA(lv_pgm).
-    IF sy-subrc = 0 AND lv_pgm IS NOT INITIAL.
+    DATA(lv_pgm) = VALUE syrepid( ).
+    IF strlen( iv_name ) <= 20.
+      DATA(lv_tcode) = CONV tcode( iv_name ).
+      SELECT SINGLE pgmna FROM tstc WHERE tcode = @lv_tcode INTO @lv_pgm.
+    ENDIF.
+    IF lv_pgm IS NOT INITIAL.
       SELECT SINGLE name FROM trdir WHERE name = @lv_pgm AND subc = '1' INTO @rv_prog.
       IF sy-subrc = 0.
         RETURN.
@@ -1161,9 +1165,11 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
       fail( 'REPORT (the object name or transaction code) is required.' ).
     ENDIF.
 
-    " A transaction code stands for the program it starts.
-    IF lv_type IS INITIAL OR lv_type = 'TCODE'.
-      SELECT SINGLE pgmna FROM tstc WHERE tcode = @lv_name INTO @DATA(lv_pgm).
+    " A transaction code stands for the program it starts. (TSTC-TCODE is 20
+    " characters; a longer host variable in the WHERE would dump.)
+    IF ( lv_type IS INITIAL OR lv_type = 'TCODE' ) AND strlen( lv_name ) <= 20.
+      DATA(lv_tcode) = CONV tcode( lv_name ).
+      SELECT SINGLE pgmna FROM tstc WHERE tcode = @lv_tcode INTO @DATA(lv_pgm).
       IF sy-subrc = 0 AND lv_pgm IS NOT INITIAL.
         lv_via  = |transaction { lv_name }|.
         lv_name = lv_pgm.
@@ -1205,6 +1211,7 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
         " Includes the program uses; system includes (<ICON> etc.) are left out.
         SELECT include FROM d010inc WHERE master = @lv_name AND include NOT LIKE '<%'
           ORDER BY include INTO TABLE @lt_more.
+        DELETE lt_more WHERE table_line CP '%*' OR table_line CS '='.
       WHEN 'CLAS' OR 'INTF'.
         need_source( iv_objtype = CONV #( lv_type ) iv_objname = lv_name ).
         TRY.
@@ -1518,8 +1525,12 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
     ENDIF.
     SELECT SINGLE name FROM trdir WHERE name = @lv_prog INTO @lv_prog.
     IF sy-subrc <> 0.
-      SELECT SINGLE pgmna FROM tstc WHERE tcode = @lv_prog INTO @DATA(lv_pgm).
-      IF sy-subrc <> 0 OR lv_pgm IS INITIAL.
+      DATA(lv_pgm) = VALUE syrepid( ).
+      IF strlen( lv_prog ) <= 20.
+        DATA(lv_tcode) = CONV tcode( lv_prog ).
+        SELECT SINGLE pgmna FROM tstc WHERE tcode = @lv_tcode INTO @lv_pgm.
+      ENDIF.
+      IF lv_pgm IS INITIAL.
         fail( |{ lv_prog } is neither a program nor a transaction code.| ).
       ENDIF.
       lv_prog = lv_pgm.
