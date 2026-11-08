@@ -1195,7 +1195,7 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
 
     CASE lv_type.
       WHEN 'PROG' OR 'INCL'.
-        need_source( iv_objtype = 'PROG' iv_objname = CONV #( lv_name ) ).
+        need_source( iv_objtype = 'PROG' iv_objname = lv_name ).
         READ REPORT lv_name INTO lt_src STATE 'A'.
         IF sy-subrc <> 0.
           fail( |{ lv_name } has no active source (or does not exist).| ).
@@ -1206,11 +1206,11 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
         SELECT include FROM d010inc WHERE master = @lv_name AND include NOT LIKE '<%'
           ORDER BY include INTO TABLE @lt_more.
       WHEN 'CLAS' OR 'INTF'.
-        need_source( iv_objtype = CONV #( lv_type ) iv_objname = CONV #( lv_name ) ).
+        need_source( iv_objtype = CONV #( lv_type ) iv_objname = lv_name ).
         TRY.
             cl_oo_factory=>create_instance( )->create_clif_source(
                 clif_name = CONV seoclsname( lv_name )
-                version   = seoc_version_active )->get_source( IMPORTING source = lt_src ).
+                version   = 'A' )->get_source( IMPORTING source = lt_src ).
           CATCH cx_root INTO DATA(lx_oo).
             fail( |Cannot read the source of { lv_name }: { lx_oo->get_text( ) }| ).
         ENDTRY.
@@ -1524,7 +1524,7 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
       ENDIF.
       lv_prog = lv_pgm.
     ENDIF.
-    need_source( iv_objtype = 'PROG' iv_objname = CONV #( lv_prog ) ).
+    need_source( iv_objtype = 'PROG' iv_objname = lv_prog ).
 
     " Text pool in the logon language, then the original language as fallback.
     READ TEXTPOOL lv_prog INTO lt_tp LANGUAGE sy-langu.
