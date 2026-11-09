@@ -378,3 +378,12 @@ def test_switch_over_stops_old_clears_login_and_asks_for_restart(tmp_path, monke
     out = migrate.retire_old_connector()
     assert out["removed"] == [] and calls == ["stop"]
     assert credentials.load_stored("prod")["username"] == "U1"
+
+
+def test_site_may_add_environments_and_aliases():
+    from sap_mcp import environments as envs
+    assert "golden" in envs.names()
+    assert envs.meta("golden")["client"] == "100" and envs.meta("golden")["base_url"] == DEV_URL
+    assert envs.normalize("customizing") == "golden" and envs.normalize(" GOLDEN ") == "golden"
+    assert not envs.is_production("golden")
+    assert envs.describe("golden").startswith("Development (golden client)")

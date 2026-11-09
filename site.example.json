@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to site.json and fill in your own SAP systems. site.json is git-ignored. base_url = the Gateway / ICM HTTPS endpoint (https://<host>:443<instance number>); client = the client (mandt) your users log into. Set verify_tls to false only for internal hosts with self-signed certificates.",
+  "_comment": "Copy to site.json and fill in your own SAP systems. site.json is git-ignored. base_url = the Gateway / ICM HTTPS endpoint (https://<host>:443<instance number>); client = the client (mandt) your users log into. Set verify_tls to false only for internal hosts with self-signed certificates. Optional extra environments (any key) are allowed, e.g. \"golden\" for the development system's customizing client where repository changes are permitted; \"aliases\" maps extra names to them.",
   "environments": {
     "prod": {
       "label": "Production",
@@ -14,8 +14,18 @@
       "base_url": "https://sap-dev.example.com:44300",
       "client": "200",
       "verify_tls": true
+    },
+    "golden": {
+      "label": "Development (golden client)",
+      "sid": "DEV",
+      "base_url": "https://sap-dev.example.com:44300",
+      "client": "100",
+      "verify_tls": true
     }
   },
   "company_note": "Company: 1000 Example Ltd; chart of accounts INT; currency EUR.",
-  "charts": "INT"
+  "charts": "INT",
+  "aliases": {
+    "customizing": "golden"
+  }
 }

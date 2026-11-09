@@ -13,8 +13,18 @@
       "base_url": "https://sap-dev.example.com:44300",
       "client": "200",
       "verify_tls": false
+    },
+    "golden": {
+      "label": "Development (golden client)",
+      "sid": "DEV",
+      "base_url": "https://sap-dev.example.com:44300",
+      "client": "100",
+      "verify_tls": false
     }
   },
   "company_note": "Company: 1000 Example Ltd; chart of accounts INT; currency EUR.",
-  "charts": "1000"
+  "charts": "1000",
+  "aliases": {
+    "customizing": "golden"
+  }
 }

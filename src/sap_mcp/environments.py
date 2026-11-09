@@ -82,8 +82,13 @@ def _load_site() -> dict[str, Any]:
 #: Everything in the site file (environments, company note, default charts).
 SITE: dict[str, Any] = _load_site()
 for _env, _vals in (SITE.get("environments") or {}).items():
-    if _env in ENVIRONMENTS and isinstance(_vals, dict):
-        ENVIRONMENTS[_env].update({k: v for k, v in _vals.items() if k in _SITE_FIELDS})
+    if not isinstance(_vals, dict):
+        continue
+    _key = str(_env).strip().lower()
+    # prod and dev always exist; a site may add more (e.g. "golden": the
+    # development system's customizing client, where repository changes are allowed).
+    ENVIRONMENTS.setdefault(_key, {"label": _key, "sid": "", "base_url": "", "client": "", "verify_tls": True})
+    ENVIRONMENTS[_key].update({k: v for k, v in _vals.items() if k in _SITE_FIELDS})
 
 
 def site_value(key: str, default: Any = None) -> Any:
@@ -96,6 +101,10 @@ _ALIASES = {
     "prod": "prod", "prd": "prod", "production": "prod", "live": "prod", "p": "prod",
     "dev": "dev", "development": "dev", "test": "dev", "testing": "dev", "d": "dev",
 }
+# Site-defined aliases, e.g. {"customizing": "golden", "100": "golden"}.
+for _alias, _target in (SITE.get("aliases") or {}).items():
+    if str(_target).lower() in ENVIRONMENTS:
+        _ALIASES[str(_alias).strip().lower()] = str(_target).lower()
 
 
 class UnknownEnvironment(ValueError):
