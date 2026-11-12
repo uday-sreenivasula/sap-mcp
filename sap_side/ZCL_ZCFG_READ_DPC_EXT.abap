@@ -169,6 +169,11 @@ CLASS zcl_zcfg_read_dpc_ext DEFINITION
       RETURNING VALUE(rv_prog) TYPE syrepid
       RAISING   /iwbep/cx_mgw_busi_exception.
 
+    METHODS check_report_auth
+      IMPORTING iv_name TYPE syrepid
+                iv_prog TYPE syrepid
+      RAISING   /iwbep/cx_mgw_busi_exception.
+
     METHODS op_attachments
       IMPORTING is_p            TYPE ts_params
                 iv_with_content TYPE abap_bool
@@ -867,6 +872,34 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD check_report_auth.
+    " A report runs here only for a user who could start it in SAP GUI:
+    " through the transaction named, through any transaction that starts
+    " the program, or through SA38 / SE38. The report's own authorization
+    " checks (company code, account type, ...) still run inside SUBMIT.
+    DATA lt_tcode TYPE STANDARD TABLE OF tcode WITH EMPTY KEY.
+
+    IF iv_name <> iv_prog AND strlen( iv_name ) <= 20.
+      APPEND CONV tcode( iv_name ) TO lt_tcode.          " called by transaction code
+    ELSE.
+      SELECT tcode FROM tstc WHERE pgmna = @iv_prog
+        ORDER BY tcode INTO TABLE @lt_tcode UP TO 100 ROWS.
+      APPEND 'SA38' TO lt_tcode.
+      APPEND 'SE38' TO lt_tcode.
+    ENDIF.
+    LOOP AT lt_tcode INTO DATA(lv_tcode).
+      AUTHORITY-CHECK OBJECT 'S_TCODE' ID 'TCD' FIELD lv_tcode.
+      IF sy-subrc = 0.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
+    IF iv_name <> iv_prog.
+      fail( |No authorization for transaction { iv_name } (S_TCODE).| ).
+    ENDIF.
+    fail( |No authorization to run { iv_prog }: none of its transactions, nor SA38, is in your SAP roles.| ).
+  ENDMETHOD.
+
+
   METHOD op_reports.
     TYPES: BEGIN OF ts_info,
              kind  TYPE string,
@@ -931,7 +964,9 @@ CLASS zcl_zcfg_read_dpc_ext IMPLEMENTATION.
     IF lv_report IS INITIAL.
       fail( `REPORT is required.` ).
     ENDIF.
+    DATA(lv_asked) = lv_report.
     lv_report = resolve_report( lv_report ).   " transaction code -> its program
+    check_report_auth( iv_name = lv_asked iv_prog = lv_report ).
 
     CALL FUNCTION 'RS_REPORTSELECTIONS_INFO'
       EXPORTING

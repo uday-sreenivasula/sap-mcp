@@ -14,13 +14,32 @@ What it does:
   RFCDES, SSF_PSE_D, RSECTAB and SECSTORE.
 - Returns at most 5000 rows per call (the MCP asks for at most 1000).
 
-**Authorizations:** the users of this service have SAP_ALL. That covers
-both checks involved: S_SERVICE (permission to call the service) and
-S_TABU_NAM (permission to read the table). No new role is needed. The
-S_TABU_NAM check stays in the code. It costs nothing for SAP_ALL users, and
-it still protects the data if the service is ever opened to a user without
-SAP_ALL. Such a user would need S_SERVICE for `ZCFG_READ_SRV_0001` and
-S_TABU_NAM with activity 03.
+**Authorizations:** every call runs under the caller's own SAP user.
+
+- **Calling the service at all** needs S_SERVICE for `ZCFG_READ_SRV`. Gateway checks this
+  before any code runs, so it cannot be waived in the class. SAP_ALL users have it. Everyone
+  else needs one small role (see "Reader role for users without SAP_ALL" below). The role
+  opens the door only; it grants no data.
+- **Table reads** check S_TABU_NAM (activity 03, table name) for each table.
+- **Reports** (`REPORT_INFO`, `RUN_REPORT`) run only for a user who could start them in SAP
+  GUI: S_TCODE for the transaction named, or for any transaction that starts the program,
+  or SA38 / SE38. The report's own checks (company code, account type, ...) then run as usual.
+  So a purchase user with FBL1N in their role can run FBL1N here, and nothing more.
+- **Source code** needs S_DEVELOP display.
+
+### Reader role for users without SAP_ALL
+
+One role for all Claude users, created once in PFCG:
+
+1. PFCG, role `Z_CLAUDE_READ`, description "Claude SAP connector: call ZCFG_READ_SRV", Save.
+2. Tab *Menu*: the arrow next to *Transaction*, choose *Authorization Default*. In the popup:
+   *TADIR Service*, Program ID `R3TR`, Object Type `IWSG`, name `ZCFG_READ_SRV_0001`. Repeat
+   with Object Type `IWSV`, name `ZCFG_READ_SRV` (the entry ending in `0001`).
+3. Tab *Authorizations*: *Change Authorization Data*. Only S_SERVICE should appear, green.
+   Save, *Generate* the profile.
+4. Tab *User*: add the users, *User Comparison*.
+
+Do this in the system where roles are maintained (transport it if roles travel from DEV).
 
 ---
 

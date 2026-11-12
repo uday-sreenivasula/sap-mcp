@@ -208,7 +208,9 @@ class SapODataClient:
             raise SapODataError(401, "Authentication failed (check user/password/client)", resp.text[:2000])
         if resp.status_code == 403:
             raise SapODataError(
-                403, "Authorization denied (user lacks scope for this service)" + suffix, resp.text[:2000]
+                403, "SAP refused the call: this SAP user is not allowed to use the service (authorization "
+                     "object S_SERVICE). For ZCFG_READ_SRV ask the SAP administrator for the Claude reader "
+                     "role (Z_CLAUDE_READ)" + suffix, resp.text[:2000]
             )
         raise SapODataError(resp.status_code, what + suffix, resp.text[:2000])
 
